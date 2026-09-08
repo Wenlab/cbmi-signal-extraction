@@ -25,6 +25,6 @@ pytorch-cuda = { version = "11.8.*", channel = "pytorch" }
 torch = { version = "==2.6.*", index = "https://download.pytorch.org/whl/cpu" }
 
 [pypi-dependencies]
-signal-extraction = { path = ".", editable = true }
+cbmi-signal-extraction = { path = ".", editable = true }
 tifffile = ">=2024.8,<2027"
 opencv-python-headless = ">=4.10,<5"

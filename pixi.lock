@@ -555,6 +555,12 @@ packages:
   - pkg:pypi/cached-property?source=compressed-mapping
   size: 16597
   timestamp: 1787678456483
+- pypi: ./
+  name: cbmi-signal-extraction
+  version: 0.1.0
+  sha256: 782ebd026cc69849fa451121c2e0433c5f28c7c17322c0ca5315272acc171296
+  requires_python: '>=3.11,<3.12'
+  editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/colorama-0.4.6-pyhd8ed1ab_1.conda
   sha256: ab29d57dc70786c1269633ba3dff20288b81664d3ff8d21af995742e2bb03287
   md5: 962b9857ee8e7018c22f2776ffa0b2d7
@@ -2116,12 +2122,6 @@ packages:
   purls: []
   size: 393680
   timestamp: 1784674401024
-- pypi: ./
-  name: signal-extraction
-  version: 0.1.0
-  sha256: 6f1bcdf59923765f2f2af63fc0629e71afb6e5e8b88692f7c44be0784963bb62
-  requires_python: '>=3.11,<3.12'
-  editable: true
 - pypi: https://files.pythonhosted.org/packages/b2/fe/81695a1aa331a842b582453b605175f419fe8540355886031328089d840a/sympy-1.13.1-py3-none-any.whl
   name: sympy
   version: 1.13.1
