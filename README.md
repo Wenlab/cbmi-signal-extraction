@@ -13,13 +13,11 @@ CPU 和 GPU 使用同一个 Torch/TorchScript 算法：
 5. calcium 使用 reference 找到的 Z 窗口；
 6. 最终减去背景值。
 
-这意味着 `device="cpu"` 不是旧 NumPy/SciPy 近似算法，而是当前 GPU improved
-算法的 CPU 后端。CPU/GPU 仍可能存在很小的浮点差异。
+CPU/GPU 仍可能存在很小的浮点差异。
 
 ## Pixi 环境
 
-Linux 服务器默认安装 CUDA 11.8 版 PyTorch，Windows 默认安装 CPU 版
-PyTorch：
+Linux 服务器默认安装 CUDA 11.8 版 PyTorch，Windows 默认安装 CPU 版 PyTorch：
 
 ```bash
 cd /home/wangjinghao/JinghaoWang/signal_extraction
