@@ -225,7 +225,7 @@ def estimate_sampled_registration_matrix(
                 candidates.append(
                     (len(sample_diagnostics), np.asarray(estimated, dtype=np.float32))
                 )
-        except Exception as exc:
+        except RegistrationCalibrationError as exc:
             sample["error"] = "%s: %s" % (type(exc).__name__, exc)
         sample_diagnostics.append(sample)
 

@@ -1,8 +1,16 @@
-.pixi/
+# Ignore everything except Python source/scripts and this policy file.
+*
+!/.gitignore
+!/src/
+!/src/**/
+!/src/**/*.py
+!/scripts/
+!/scripts/**/
+!/scripts/**/*.py
+
+# Keep tests and Python caches local, including under the allowed directories.
+tests/
+test/
+test_*.py
+*_test.py
 __pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.coverage
-build/
-dist/

@@ -127,8 +127,8 @@ def extract_signals(
     output_path: Optional[Union[str, Path]] = None,
     *,
     device: str = "auto",
-    percentile_reference: float = 0.01,
-    percentile_calcium: float = 0.01,
+    percentile_reference: float = 0.5,
+    percentile_calcium: float = 0.5,
     area_ratio: float = 1.0,
     background_threshold: float = 102.0,
     bounding_box_format: str = "auto",
@@ -149,6 +149,8 @@ def extract_signals(
     max_translation_deviation_px: float = DEFAULT_MAX_TRANSLATION_DEVIATION_PX,
     flip_calcium_horizontal: bool = True,
     show_progress: bool = True,
+    max_volumes: Optional[int] = None,
+    start_volume: int = 0,
 ) -> SignalExtractionResult:
     """Extract signals from neuron bounding boxes and raw images.
 
@@ -165,7 +167,7 @@ def extract_signals(
         detection uses whether the source is a directory and its suffix/HDF5
         structure.
     reference_images, calcium_images:
-        NPY/TIFF file or directory. See the README for supported layouts.
+        NPY/TIFF file or directory, or HDF5 with /volumes (T,Z,Y,X).
     output_path:
         Optional output HDF5. The primary dataset is ``activity`` with shape
         ``(channels, neurons, time)``.
@@ -180,6 +182,10 @@ def extract_signals(
         guarded ECC estimate from ``registration_frame``.
     """
     resolved_device = resolve_device(device)
+    if start_volume < 0:
+        raise ValueError("start_volume must be >= 0")
+    if max_volumes is not None and max_volumes <= 0:
+        raise ValueError("max_volumes must be a positive integer")
     reference_series = open_volume_series(
         reference_images,
         input_format=input_format,
@@ -198,6 +204,23 @@ def extract_signals(
             else None
         ),
     )
+    window_stop = (
+        None if max_volumes is None else start_volume + max_volumes
+    )
+
+    def _in_window(frame) -> bool:
+        if frame.frame_id < start_volume:
+            return False
+        return window_stop is None or frame.frame_id < window_stop
+
+    reference_series = VolumeSeries(
+        [frame for frame in reference_series.frames if _in_window(frame)]
+    )
+    coordinate_frames = [frame for frame in coordinate_frames if _in_window(frame)]
+    if not coordinate_frames:
+        raise ValueError(
+            "start_volume %d leaves no frames to process" % start_volume
+        )
     reference_frames = _match_image_frames(
         coordinate_frames, reference_series, frame_alignment, "reference"
     )
@@ -211,6 +234,9 @@ def extract_signals(
             frames_per_volume=frames_per_volume,
             tiff_layout=tiff_layout,
             z_range=z_range,
+        )
+        calcium_series = VolumeSeries(
+            [frame for frame in calcium_series.frames if _in_window(frame)]
         )
         calcium_frames = _match_image_frames(
             coordinate_frames, calcium_series, frame_alignment, "calcium"
@@ -374,6 +400,7 @@ def extract_signals(
             "area_ratio": float(area_ratio),
             "background_threshold": float(background_threshold),
             "bounding_box_format": str(bounding_box_format),
+            "input_format": str(input_format),
             "axis_order": str(axis_order),
             "frames_per_volume": int(frames_per_volume),
             "tiff_layout": str(tiff_layout),
@@ -394,6 +421,8 @@ def extract_signals(
                 max_translation_deviation_px
             ),
             "flip_calcium_horizontal": bool(flip_calcium_horizontal),
+            "max_volumes": None if max_volumes is None else int(max_volumes),
+            "start_volume": int(start_volume),
         },
     )
     if output_path is not None:

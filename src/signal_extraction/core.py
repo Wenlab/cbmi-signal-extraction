@@ -216,7 +216,8 @@ def _as_volume_tensor(
             raise ValueError(
                 "volume must have shape (Z, Y, X), got %r" % (array.shape,)
             )
-        tensor = torch.from_numpy(np.ascontiguousarray(array))
+        # Read-only memory maps need a writable copy of this volume for Torch.
+        tensor = torch.from_numpy(np.require(array, requirements=["C", "W"]))
     if tensor.ndim == 4 and tensor.shape[1] == 1:
         tensor = tensor.squeeze(1)
     if tensor.ndim != 3:
@@ -232,7 +233,7 @@ def _as_volume_tensor(
 def extract_volume_signals(
     volume: Union[np.ndarray, torch.Tensor],
     neuron_pt_tuple: Union[np.ndarray, torch.Tensor],
-    percentile: float = 0.01,
+    percentile: float = 0.5,
     area_ratio: float = 1.0,
     background_threshold: float = 102.0,
     device: Union[str, torch.device] = "auto",
