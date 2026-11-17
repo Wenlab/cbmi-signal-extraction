@@ -47,9 +47,8 @@ SKIP_VOLUMES = ()  # Volume IDs to skip, e.g. (12, 35); retain NaN on the ROI ti
 
 
 # 4. Channel registration (dual-channel only)
-REGISTRATION_MATRIX_PATH = None  # Optional (2,3) NPY matrix; overrides both flags.
-AUTO_REGISTRATION = True  # No path: True runs ECC; False uses config.py directly.
-ALLOW_DEFAULT_CALIBRATION = True  # Allow default fallback after ECC failure only.
+REGISTRATION_MATRIX_PATH = None  # Optional (2,3) NPY matrix; takes priority.
+AUTO_REGISTRATION = True  # No path: True = ECC with default fallback; False = config.py.
 REGISTRATION_VOLUMES = 200  # Initial candidate volumes for ECC sampling.
 FLIP_CALCIUM_HORIZONTAL = True  # Must match the matrix convention; default requires True.
 
@@ -217,8 +216,6 @@ def _registration_matrix(reference, frame_ids: np.ndarray):
                 "reason": None,
             }
         except RegistrationCalibrationError as error:
-            if not ALLOW_DEFAULT_CALIBRATION:
-                raise
             matrix = _default_registration_matrix(
                 reference_by_id[candidates[0]], calcium[candidates[0]]
             )
@@ -369,11 +366,7 @@ def main() -> int:
         "registration_matrix_path": REGISTRATION_MATRIX_PATH,
         "auto_registration": AUTO_REGISTRATION,
         "registration_volumes": REGISTRATION_VOLUMES,
-        "allow_default_calibration": ALLOW_DEFAULT_CALIBRATION,
-        "default_calibration": (
-            DEFAULT_CALIBRATION
-            if not AUTO_REGISTRATION or ALLOW_DEFAULT_CALIBRATION else None
-        ),
+        "default_calibration": DEFAULT_CALIBRATION,
     }
     config_json = json.dumps(config, default=str, sort_keys=True, indent=2)
     _prepare_parts_dir(config_json)
