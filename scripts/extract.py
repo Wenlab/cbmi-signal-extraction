@@ -1,7 +1,6 @@
-"""修改下方分组参数后，运行 ``pixi run signal-extraction``。
+"""Edit the settings below, then run ``pixi run signal-extraction``.
 
-每个时间点 T 对应一个完整的三维 volume，读取后统一为 (Z,Y,X)。
-图像按 volume 读取，结果分块保存、支持续跑，最后合并为 intensity.h5。
+Each time point is one complete (Z,Y,X) volume.
 """
 
 from __future__ import annotations
@@ -26,96 +25,46 @@ from signal_extraction.config import DEFAULT_CALIBRATION  # noqa: E402
 from signal_extraction.images import open_volume_series  # noqa: E402
 
 
-# ---------------------------------------------------------------------------
-# 1. 输入路径
-# ROI 的 volume ID 须与参考图像对应，坐标须匹配参考图像的 XY 几何及裁剪后的 Z 基准。
-# ---------------------------------------------------------------------------
-DATA_DIR = Path("data/dataset")  # 下方默认输入、输出路径的基目录。
-
-# 神经元 ROI 框：NPY、dynamics/realtime H5，或实时结果 volume_*.h5 目录。
+# 1. Input paths
+# ROI IDs and coordinates must match the reference volumes.
+DATA_DIR = Path("data/dataset")
 BOUNDING_BOX_SOURCE = DATA_DIR / "neuron_point_tuple.npy"
-REFERENCE_IMAGES = DATA_DIR / "red_volumes.h5"  # 红通道；支持 NPY、H5、TIFF。
-CALCIUM_IMAGES = DATA_DIR / "green_volumes.h5"  # 绿通道；设为 None 仅提取红通道。
+REFERENCE_IMAGES = DATA_DIR / "red_volumes.h5"  # NPY, H5, or TIFF.
+CALCIUM_IMAGES = DATA_DIR / "green_volumes.h5"  # None for reference only.
 
 
-# ---------------------------------------------------------------------------
-# 2. 图像格式、轴顺序与 Z 层范围（红绿通道共用）
-# T=完整 volume 的时间点，Z=深度层，Y=图像高，X=图像宽。
-# ---------------------------------------------------------------------------
-# "auto" 按文件扩展名或目录内容识别；也可指定 "npy"、"h5"、"tiff"。
-INPUT_FORMAT = "auto"
-
-# "tzyx"/"tyxz" 用于四维时间序列；"zyx"/"yxz" 用于单个三维 volume。
-# "auto"：TIFF 优先读取轴元数据，否则按形状推断 Z 轴；H5 固定为 /volumes (T,Z,Y,X)。
-AXIS_ORDER = "auto"
-
-# 以下两个参数仅用于 TIFF 目录：
-# "slices"：每个文件是一张二维 Z 切片；"volumes"：每个文件是一个三维 volume。
-# "auto" 检查目录中的第一个 TIFF，判断是切片还是 volume。
-TIFF_LAYOUT = "auto"
-
-# 仅切片目录生效：原始采集每个 volume 的切片总数，用于先划分时间点。
-FRAMES_PER_VOLUME = 20
-
-# 所有格式均生效：None 保留全部 Z 层；(start, stop) 保留 [start, stop)，从 0 计数。
-# 例：raw TIFF 每 volume 20 层、只取前 18 层：上面仍填 20，此处设 (0, 18)。
-# 已裁好 Z 的导出数据通常保持 None；ROI 的 Z 坐标须对应裁剪后的 volume。
-Z_RANGE = None
+# 2. Image layout (shared by both channels)
+INPUT_FORMAT = "auto"  # auto, npy, h5, tiff.
+AXIS_ORDER = "auto"  # auto, tzyx/tyxz, zyx/yxz; H5 is fixed TZYX.
+TIFF_LAYOUT = "auto"  # TIFF directories: auto, slices (2D), volumes (3D).
+FRAMES_PER_VOLUME = 20  # Slices per volume; only for TIFF slice directories.
+Z_RANGE = None  # None = all Z; (start, stop) uses an exclusive stop. ROI Z must match.
 
 
-# ---------------------------------------------------------------------------
-# 3. 时间范围与缺失数据（以下单位均为完整 volume）
-# ---------------------------------------------------------------------------
-# None 使用全部 ROI 时间点；整数 N 为 volume ID 的结束边界，仅处理 ID < N。
-TOTAL_VOLUMES = None
-
-# 主动跳过的 volume ID，例如 (12, 35)；ROI 时间轴中的这些位置保留为 NaN。
-SKIP_VOLUMES = ()
+# 3. Time range (complete volumes)
+TOTAL_VOLUMES = None  # None = all ROI times; N keeps volume IDs < N.
+SKIP_VOLUMES = ()  # Volume IDs to skip, e.g. (12, 35); retain NaN on the ROI time axis.
 
 
-# ---------------------------------------------------------------------------
-# 4. 红绿通道配准（仅 CALCIUM_IMAGES 非 None 时生效）
-# 有 NPY 路径：直接使用指定矩阵，跳过自动估计和失败回退。
-# 无 NPY 路径：AUTO_REGISTRATION=False 直接用默认矩阵；
-#              AUTO_REGISTRATION=True 先做 ECC，失败后由回退开关决定是否用默认矩阵。
-# 默认矩阵与标定来源保存在 src/signal_extraction/config.py。
-# ---------------------------------------------------------------------------
-REGISTRATION_MATRIX_PATH = None  # None 或 Path(r"H:/.../matrix.npy")，矩阵形状为 (2,3)。
-AUTO_REGISTRATION = True  # False 直接使用 config.py 默认矩阵；True 自动估计矩阵。
-ALLOW_DEFAULT_CALIBRATION = True  # 仅自动模式失败时生效：True 回退默认矩阵，False 报错。
-
-# 仅自动模式生效：从前 N 个未跳过的 volume 中抽样估计 ECC，结果供全部分块共用。
-REGISTRATION_VOLUMES = 200
-
-# True：矩阵目标坐标为水平翻转后的绿通道，提取时再映回原始绿通道。
-# 当前默认矩阵要求 True，且原始 XY 为 1024×1024，未做 XY 裁剪、缩放或预对齐。
-FLIP_CALCIUM_HORIZONTAL = True
+# 4. Channel registration (dual-channel only)
+REGISTRATION_MATRIX_PATH = None  # Optional (2,3) NPY matrix; overrides both flags.
+AUTO_REGISTRATION = True  # No path: True runs ECC; False uses config.py directly.
+ALLOW_DEFAULT_CALIBRATION = True  # Allow default fallback after ECC failure only.
+REGISTRATION_VOLUMES = 200  # Initial candidate volumes for ECC sampling.
+FLIP_CALCIUM_HORIZONTAL = True  # Must match the matrix convention; default requires True.
 
 
-# ---------------------------------------------------------------------------
-# 5. 强度提取（红绿通道共用）
-# ---------------------------------------------------------------------------
-# 每个 Z 层在椭圆 ROI 内保留的最亮采样点比例，范围 (0,1]；0.5 表示最亮约 50%。
-PERCENTILE = 0.5
-
-# ROI 内椭圆采样范围的线性缩放系数，范围 (0,1]；1.0 使用 ROI 内接椭圆。
-AREA_RATIO = 1.0
-
-# 从提取强度中减去的固定背景值，单位与图像灰度一致；设为 0 则不扣除。
-BACKGROUND_THRESHOLD = 102.0
+# 5. Intensity extraction (shared by both channels)
+PERCENTILE = 0.5  # Brightest fraction of ROI samples per Z slice, (0,1].
+AREA_RATIO = 1.0  # Linear scale of the ROI's inscribed ellipse, (0,1].
+BACKGROUND_THRESHOLD = 102.0  # Constant subtracted from extracted intensity.
 
 
-# ---------------------------------------------------------------------------
-# 6. 计算设备、输出与续跑
-# ---------------------------------------------------------------------------
-DEVICE = "auto"  # "auto" 优先使用可用 CUDA，否则 CPU；可指定 "cpu" 或 "cuda"。
-OUTPUT = DATA_DIR / "intensity.h5"  # 最终合并结果。
-
-# 每个输出分块最多包含的连续 volume 数；图像仍逐 volume 读取。
-CHUNK_SIZE = 2000
-
-# 保存分块、配准矩阵及配置记录；相同配置可续跑，配置不匹配会拒绝复用。
-# 不同配置使用新的 OUTPUT/PARTS_DIR，避免混用结果。
+# 6. Execution and output
+DEVICE = "auto"  # auto (CUDA if available), cpu, cuda.
+OUTPUT = DATA_DIR / "intensity.h5"
+CHUNK_SIZE = 2000  # Maximum contiguous volumes per output part.
+# Cached parts and registration; reuse only with matching settings.
 PARTS_DIR = OUTPUT.parent / (OUTPUT.stem + "_parts")
 
 
