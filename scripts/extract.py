@@ -48,9 +48,10 @@ FRAMES_PER_VOLUME = 20  # Used only for a directory of single-slice TIFFs.
 Z_RANGE = None
 
 FLIP_CALCIUM_HORIZONTAL = True  # Native two-camera exports retain green's flip.
-REGISTRATION_MATRIX_PATH = None  # Optional existing .npy matrix.
-REGISTRATION_VOLUMES = 200  # Sample ECC candidates from this many initial volumes.
-ALLOW_DEFAULT_CALIBRATION = True  # On ECC failure, use signal_extraction/config.py.
+REGISTRATION_MATRIX_PATH = None  # Explicit .npy matrix takes priority over both flags.
+AUTO_REGISTRATION = True  # False: use config.py's default directly when no path is set.
+REGISTRATION_VOLUMES = 200  # Candidate window used only for automatic ECC.
+ALLOW_DEFAULT_CALIBRATION = True  # Allow default fallback only when automatic ECC fails.
 TOTAL_VOLUMES = None  # Optional exclusive volume-ID stop; None uses all ROI times.
 CHUNK_SIZE = 2000
 SKIP_VOLUMES = ()  # Declared dropped acquisition volumes remain NaN in the output.
@@ -159,7 +160,7 @@ def _registration_matrix(reference, frame_ids: np.ndarray):
             np.load(matrix_path, allow_pickle=False)
         )
         diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
-        if diagnostics.get("source") == "default_calibration":
+        if diagnostics.get("strategy") == "fallback":
             warnings.warn(
                 "Reusing cached default calibration after automatic channel "
                 "registration failed: %s" % diagnostics["reason"],
@@ -173,44 +174,59 @@ def _registration_matrix(reference, frame_ids: np.ndarray):
     skipped = set(SKIP_VOLUMES)
     candidates = [
         int(value) for value in frame_ids if value not in skipped
-    ][:REGISTRATION_VOLUMES]
+    ][:REGISTRATION_VOLUMES if AUTO_REGISTRATION else 1]
     for frame_id in candidates:
         if frame_id not in reference_by_id or frame_id not in calcium:
             raise ValueError("Missing paired camera volume %d" % frame_id)
-    try:
-        matrix, diagnostics = estimate_sampled_registration_matrix(
-            [reference_by_id[value].load for value in candidates],
-            [calcium[value].load for value in candidates],
-            frame_ids=candidates,
-            flip_horizontal=FLIP_CALCIUM_HORIZONTAL,
-        )
-        matrix = _validate_registration_matrix(matrix)
-        diagnostics = {
-            **diagnostics,
-            "source": "sampled_ecc_median",
-            "reason": None,
-        }
-    except RegistrationCalibrationError as error:
-        if not ALLOW_DEFAULT_CALIBRATION:
-            raise
+    if not AUTO_REGISTRATION:
         matrix = _default_registration_matrix(
             reference_by_id[candidates[0]], calcium[candidates[0]]
         )
         diagnostics = {
             "source": "default_calibration",
-            "strategy": "fallback",
-            "reason": str(error),
+            "strategy": "default",
+            "reason": "automatic registration disabled; configured default selected",
             "matrix": matrix.tolist(),
             "default_calibration": DEFAULT_CALIBRATION,
-            "automatic_registration_diagnostics": error.diagnostics,
         }
-        warnings.warn(
-            "Automatic channel registration failed (%s); using default "
-            "calibration from %s."
-            % (error, DEFAULT_CALIBRATION["source_file"]),
-            RuntimeWarning,
-            stacklevel=2,
+        print(
+            "Using configured default calibration; automatic registration is disabled."
         )
+    else:
+        try:
+            matrix, diagnostics = estimate_sampled_registration_matrix(
+                [reference_by_id[value].load for value in candidates],
+                [calcium[value].load for value in candidates],
+                frame_ids=candidates,
+                flip_horizontal=FLIP_CALCIUM_HORIZONTAL,
+            )
+            matrix = _validate_registration_matrix(matrix)
+            diagnostics = {
+                **diagnostics,
+                "source": "sampled_ecc_median",
+                "reason": None,
+            }
+        except RegistrationCalibrationError as error:
+            if not ALLOW_DEFAULT_CALIBRATION:
+                raise
+            matrix = _default_registration_matrix(
+                reference_by_id[candidates[0]], calcium[candidates[0]]
+            )
+            diagnostics = {
+                "source": "default_calibration",
+                "strategy": "fallback",
+                "reason": str(error),
+                "matrix": matrix.tolist(),
+                "default_calibration": DEFAULT_CALIBRATION,
+                "automatic_registration_diagnostics": error.diagnostics,
+            }
+            warnings.warn(
+                "Automatic channel registration failed (%s); using default "
+                "calibration from %s."
+                % (error, DEFAULT_CALIBRATION["source_file"]),
+                RuntimeWarning,
+                stacklevel=2,
+            )
     temporary = matrix_path.with_suffix(".npy.partial")
     with temporary.open("wb") as handle:
         np.save(handle, matrix, allow_pickle=False)
@@ -304,8 +320,15 @@ def _merge_parts(
 
 
 def main() -> int:
-    if CHUNK_SIZE <= 0 or REGISTRATION_VOLUMES <= 0:
-        raise ValueError("CHUNK_SIZE and REGISTRATION_VOLUMES must be positive")
+    if CHUNK_SIZE <= 0:
+        raise ValueError("CHUNK_SIZE must be positive")
+    if (
+        CALCIUM_IMAGES is not None
+        and REGISTRATION_MATRIX_PATH is None
+        and AUTO_REGISTRATION
+        and REGISTRATION_VOLUMES <= 0
+    ):
+        raise ValueError("REGISTRATION_VOLUMES must be positive for automatic ECC")
     reference = _image_series(REFERENCE_IMAGES)
     frames = load_coordinate_frames(
         BOUNDING_BOX_SOURCE,
@@ -334,10 +357,12 @@ def main() -> int:
         "total_volumes": TOTAL_VOLUMES,
         "skip_volumes": SKIP_VOLUMES,
         "registration_matrix_path": REGISTRATION_MATRIX_PATH,
+        "auto_registration": AUTO_REGISTRATION,
         "registration_volumes": REGISTRATION_VOLUMES,
         "allow_default_calibration": ALLOW_DEFAULT_CALIBRATION,
         "default_calibration": (
-            DEFAULT_CALIBRATION if ALLOW_DEFAULT_CALIBRATION else None
+            DEFAULT_CALIBRATION
+            if not AUTO_REGISTRATION or ALLOW_DEFAULT_CALIBRATION else None
         ),
     }
     config_json = json.dumps(config, default=str, sort_keys=True, indent=2)

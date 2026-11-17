@@ -1,4 +1,4 @@
-"""Default two-camera calibration for automatic registration failures.
+"""Default two-camera calibration for direct use or automatic ECC fallback.
 
 The matrix maps original red (x, y) pixel centers to horizontally flipped
 green (x, y). Extraction then maps x back with ``x = width - 1 - x``.
