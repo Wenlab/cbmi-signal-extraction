@@ -1,6 +1,7 @@
-# Ignore everything except Python source/scripts and this policy file.
+# Track Python source/scripts, the root README, and this policy file.
 *
 !/.gitignore
+!/README.md
 !/src/
 !/src/**/
 !/src/**/*.py
